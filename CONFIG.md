@@ -21,13 +21,13 @@ DSH 设置 → 「桌宠配置」：
 
 ## 方式二：config.jsonc（单一来源）
 
-插件包内 `dsh-pet/assets/config.jsonc` 的 `pets` 数组定义**默认宠物**：
+插件包内 `dsh-pet/assets/config.jsonc` 只定义**全局默认值**，其中的 `pets` 是**空数组**——本包开箱即带的两只角色不走这条，而是随包分发的 pet pack（见方式四）：
 
 ```jsonc
-"pets": [
-  { "id": "main", "size": 462, "balanceEnabled": true, "display": "both", "position": { "corner": "top-right", "marginX": 24, "marginY": 100 } }
-]
+"pets": []
 ```
+
+要让某只角色落在主配置里（而不是 pet pack），在用户层 `/dsh-pet/main-config.jsonc` 写 `pets` 数组即可，结构同上；实例级默认值（`size` 462 / `display` both / 右上角 marginX 24 / marginY 100）由 `PET_INSTANCE_DEFAULTS` 兜底。
 
 - 每只宠物：`id`（标识）／`size`（宽度 px）／`balanceEnabled`（是否启用余额功能，必填布尔）／`display`（web/desktop/both/none，必填，见上）／`position`（corner 四角之一 + marginX/marginY 边距）
 - 余额刷新周期：`eventsRefreshSec.balance`（秒）——余额数据刷新与余额动画触发的间隔，启动时立即触发一次，之后按此周期循环（默认 1800）
@@ -94,3 +94,19 @@ $DSH_HOME/dsh-pet/
 - 配置非法 / 缺少 `-animation/` 目录 / 实例 id 与主宠物冲突 → 加载时显式报错并跳过（不影响其他宠物）
 - 设置页不列出文件宠物（改文件即生效，刷新可见；保存/同步不会把它们写进 `main-config.jsonc`）
 - 余额档位动画按各宠物自己的 `events.balance`
+
+### 随包分发的 pet pack（本包自带的两只）
+
+本包把两只角色作为 **pack 内置 pet** 随包发布，放在插件包自己的 `dsh-pet/assets/pet/`：
+
+```
+dsh-pet/assets/pet/
+├── columbina-config.json      ← 哥伦比娅（实例 id columbina1，默认右上）
+├── columbina-animation/       ← 22 个 webm
+├── nahida-config.json         ← 纳西妲（实例 id nahida1，默认右下）
+└── nahida-animation/          ← 22 个 webm
+```
+
+扫描顺序：**先用户层 `/dsh-pet/pet/`，再包内 `assets/pet/`**，同名前缀**用户层优先**（用户层先占 id，包内同名条目被跳过）。所以想覆盖某只角色的动画池，把同名 `<前缀>-config.json` + `<前缀>-animation/` 放进用户层即可，不必改包内文件。
+
+**改设置写到哪里**：包内文件在安装目录里（asar 内只读、升级会被覆盖），所以对随包 pet 改 display / 固定 / 人设时走 **copy-on-write**——写到用户层 `/dsh-pet/pet/<前缀>-config.json`，包内原件不动。因此在设置页调过某只角色后，用户层就会出现一份同名配置，这是预期行为。

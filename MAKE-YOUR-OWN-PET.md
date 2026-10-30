@@ -13,7 +13,7 @@
 
 生成结果按动作各存一个 mp4，放入 `video/`。
 
-> **源视频获取**：为控制仓库体积，`video/` 源视频不入 git。Releases 提供**打包压缩包**，浏览器直接下载即可：
+> **源视频获取**：为控制仓库体积，`video/` 源视频不入 git。**本仓库暂未提供源视频包的 Release**（派生时没有继承上游的 `assets-videos.zip`，上游那份对应的是已删掉的上游角色），想复现素材链需自己从头生成。
 >
 > - `assets-videos.zip` —— 全部源视频压缩包（中文名 mp4，解压后放入 `video/`）
 >
@@ -47,26 +47,26 @@ python encode_thumbs.py      # 转码 640×360 播放变体 → step04/
 
 插件默认只发布 `.webm`（VP9-alpha），Safari/WKWebView 不认 webm alpha（黑底），macOS 需要在 GitHub Release 下载官方转码的 **HEVC-with-Alpha `.mov`** 素材使用，两步：
 
-1. **下载**：<https://github.com/PC2005-cloud/dsh-pet/releases/tag/assets-mov>（固定 tag，保持最新；zip 解压后文件名与 webm 一一对应）
+1. **下载**：上游仓库的固定 tag <https://github.com/PC2005-cloud/dsh-pet/releases/tag/assets-mov>（**那是上游角色的 mov，本仓库没有自己的 mov 素材**；要给本包两只角色做，按本文流程自己转一遍）
 2. **放入**：`.mov` 文件放进 `$DSH_HOME/dsh-pet/main-animation/mov/`（pet pack 宠物则是 `pet/<种类名>-animation/mov/`）
 
 ## ③ 动画 → 插件
 
 ```sh
 # 把 step04 的播放变体同步进插件包（webm 直接 cp）
-cp step04/*.webm dsh-pet/assets/webm/   # 播放格式（VP9-alpha）
+cp step04/*.webm dsh-pet/assets/pet/<种类名>-animation/   # 播放格式（VP9-alpha），文件名叫什么，config 里的 animations 就写什么
 
 # 本地安装插件（--profile 填实际在用的那个：dsh web → web；
 # 桌面应用（Electron 版）改用应用内「插件管理」，见「快速开始（安装插件）」；
 # file: 指向插件目录 dsh-pet/dsh-pet）
-dsh plugin --profile web add file:D:/path/to/dsh-pet/dsh-pet
+dsh plugin --profile web add file:D:/path/to/dsh-genshin-pet/dsh-pet
 ```
 
 > 中间产物（step01-04）由脚本生成、不入仓库；`video/` 源视频和脚本是成果、入库维护。
 
 ## 🎯 发布（单一 webm 格式）
 
-插件只发布一个 npm 包、一个素材格式（webm）；`files` 收敛为固定清单（lib / src / assets/webm / runtime/electron-helper / assets/fonts / assets/pic / assets/config.jsonc / scripts/ensure-electron.mjs / cordis.patch.yml，见 `prepare.js`；浏览器与桌面模式共用，包体最小）：
+插件只发布一个 npm 包、一个素材格式（webm）；`files` 收敛为固定清单（lib / src / assets/pet / runtime/electron-helper / assets/fonts / assets/pic / assets/sound / assets/config.jsonc / assets/logo.png / scripts/ensure-electron.mjs / cordis.patch.yml，见 `prepare.js`；浏览器与桌面模式共用，包体最小）：
 
 ```sh
 cd dsh-pet

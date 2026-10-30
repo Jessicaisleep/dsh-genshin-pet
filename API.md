@@ -1,6 +1,6 @@
-# dsh-pet 对外 HTTP 接口一览
+# dsh-genshin-pet 对外 HTTP 接口一览
 
-dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由** `/dsh-pet-7340`，浏览器端、
+dsh-genshin-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由** `/dsh-pet-7340`，浏览器端、
 桌面端、设置页与第三方插件全都访问同一份实现。本文只做**功能预览**（接口名 + 一句话），
 完整契约——参数、响应体、字段含义、错误码与示例——见根目录的 [`openapi.yaml`](openapi.yaml)。
 
@@ -68,6 +68,7 @@ dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由
 | `PUT /dsh-pet-7340/config` | 保存用户层配置（白名单重建，用户手写的精调字段会保留） |
 | `POST /dsh-pet-7340/config` | 用内置默认整份覆盖用户配置，即「恢复默认」 |
 | `POST /dsh-pet-7340/pet-display` | **改单只宠物的显示位置**（`web` / `desktop` / `both` / `none`），只传 `{ id, display }` |
+| `POST /dsh-pet-7340/pet-pinned` | **固定/解除固定桌面宠物**：`{ id, pinned, pinX?, pinY? }`。固定时没带坐标会回退到「桌面实况 → 配置旧坐标」，两者都没有就返回 `pin-needs-position`（不会静默钉到 0,0） |
 | `POST /dsh-pet-7340/reload` | 重载桌面端（重启桌面宠物进程，按最新配置重建窗口） |
 
 ## 六、第三方菜单项
@@ -95,6 +96,36 @@ dsh-pet 的宿主半侧向 DSH 自己的 Web 服务注册了**一条前缀路由
 | --- | --- |
 | `POST /dsh-pet-7340/work-status` | **外部写入工作状态**：`{ state, task? }`，固定外部槽，最后写入者生效 |
 | `DELETE /dsh-pet-7340/work-status` | **清空外部槽**回空闲（幂等，204） |
+
+## 九、人设（角色卡）
+
+| 接口 | 功能 |
+| --- | --- |
+| `GET /dsh-pet-7340/pet-persona?pet=` | 读某只宠物的**生效人设**：`{ ok, pet:{id,name,display}, persona, entryPersona, system }`。`persona` = 当前生效的覆盖值，`entryPersona` = 配置里条目级的原值，`system` = 真正拼进提示词的那段 |
+| `POST /dsh-pet-7340/pet-persona?pet=` | 写覆盖人设：body `{ persona }`。**空串 = 删除覆盖、回落到条目级**。不设长度上限（贴整张角色卡也可以） |
+
+> 覆盖值写在用户层，包里随包分发的角色（columbina / nahida）改人设走 copy-on-write，包内 `assets/pet/*-config.json` 不动；想恢复原样就 POST 空串。
+
+## 十、备份与迁移（portable）
+
+| 接口 | 功能 |
+| --- | --- |
+| `POST /dsh-pet-7340/portable/export` | 导出备份：body `{ includeApiKey? }`（默认 false），回 `{ ok, bundle, skipped }`。bundle 是自包含 JSON（主配置 / 记忆 / 独立模式 AI 设置 / 每份 pet pack 配置 + 形状校验），受 512 KB 上限约束 |
+| `POST /dsh-pet-7340/portable/import` | 导入备份：body `{ text, dry? }`。`dry:true` 只算计划不写盘，回 `BackupImportPlan`；失败一律 HTTP 200 + `{ ok: false, reason, message }`，`reason` 枚举 not-json / wrong-format / unsupported-version / too-large / too-many-files / bad-path / file-mismatch / bundle-mismatch / bad-content |
+
+> **没有 GET 版本是故意的**：独立模式下所有 `GET /dsh-pet-<数字>/…` 会被当作公开读放行、不校验 token，而导出内容含 `memory.json` 真实对话原文。导出只走 POST。
+> 超限时返回 413（请求体 > 512 KB × 1.3）。
+
+## 十一、读屏助手（assistant）
+
+| 接口 | 功能 |
+| --- | --- |
+| `GET /dsh-pet-7340/assistant/settings` | 读助手全部设置：开关、权限档（readonly / workspace / full）、联网、记忆模式（single / group）、群聊范围、记忆召回 K、对话轮数、workspaceRoot、每只宠物的工作目录、读屏是否可用 |
+| `POST /dsh-pet-7340/assistant/settings` | PATCH 语义：只改传了的键（白名单 13 个），`undefined` 跳过。**改成功会清空已发的授权**（权限降档后旧授权必须失效） |
+| `GET /dsh-pet-7340/assistant/history` | 操作记录：`?limit=` 默认 100、上限 1000，回 `{ ok, total, limit, items }` |
+| `DELETE /dsh-pet-7340/assistant/history` | 清空记录 |
+| `GET /dsh-pet-7340/assistant/approvals` | 待审批的越权动作：`{ ok, workspace, items }` |
+| `POST /dsh-pet-7340/assistant/approvals` | 审批一条：body `{ id, allow }`。拒绝回 `{ ok:true, allowed:false }`；放行则先登记授权再重放那次请求，回 `{ ok:true, allowed:true, text }` |
 
 ---
 
