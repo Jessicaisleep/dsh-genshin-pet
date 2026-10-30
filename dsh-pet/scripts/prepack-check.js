@@ -149,6 +149,31 @@ else fail('package.json missing dsh.bundle.patch');
 if (pkg.dsh?.client?.platform === 'web') ok('dsh.client.web declared');
 else fail('package.json missing dsh.client platform web');
 
+// ---- 5b. 商店截图：screenshots.json 里列的每张图都得存在，且都在 files 白名单里 ----
+// 坑与 memes 相同：prepare.js 会覆盖 package.json 的 files，漏了哪张，市场详情页就是
+// 一个破图占位。这份文件是可选的（没有就不算错），但一旦存在就必须自洽。
+const shotsPath = join(ROOT, 'screenshots.json');
+if (!existsSync(shotsPath)) {
+  ok('no screenshots.json (市场详情页回退到 README 抽图)');
+} else {
+  try {
+    const raw = readFileSync(shotsPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const list = Array.isArray(parsed) ? parsed : (parsed.screenshots ?? []);
+    const bad = list.filter((p) => typeof p !== 'string' || p.startsWith('/') || p.includes('..'));
+    const missing = list.filter((p) => typeof p === 'string' && !existsSync(join(ROOT, p)));
+    const notInFiles = list.filter(
+      (p) => typeof p === 'string' && !(Array.isArray(pkg.files) && pkg.files.includes(p)),
+    );
+    if (bad.length) fail(`screenshots.json 有非法路径（不能以 / 开头、不能含 ..）：${bad.join(', ')}`);
+    else if (missing.length) fail(`screenshots.json 指向的图不存在：${missing.join(', ')}`);
+    else if (notInFiles.length) fail(`screenshots.json 的图不在 files 白名单里（会漏发）：${notInFiles.join(', ')}`);
+    else if (list.length < 1 || list.length > 8) fail(`screenshots.json 必须 1-8 张，实际 ${list.length} 张`);
+    else ok(`screenshots.json aligned (${list.length} 张，全部存在且在 files 里)`);
+  } catch (e) {
+    fail(`screenshots.json 解析失败：${e.message}`);
+  }
+}
 // ---- 6. 表情包：本包默认不带（assets/memes 已随派生版移除），带了就必须真发出去 ----
 // 坑：scripts/prepare.js 每次发布都会用**硬编码白名单覆盖** package.json 的 files，
 // 只在 package.json 里加一行是无效的 → 这里显式断言，防止再次静默漏发。

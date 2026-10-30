@@ -85,6 +85,11 @@ const keep = [
   // 与 memes 同理——本数组会覆盖 package.json 的 files，漏掉它则 npm 包里没有这张图，
   // 读取方 dsh-app-boot 的 iconOf 找不到文件会抛错，图标退回默认插画
   'assets/logo.png',
+  // 商店截图（插件市场的详情页按 screenshots.json 的路径读图）。同样必须加在这里：
+  // 本数组会覆盖 package.json 的 files，只改 package.json 无效。
+  'assets/screenshot-1.png',
+  'assets/screenshot-2.png',
+  'screenshots.json',
   'scripts/ensure-electron.mjs',
   'cordis.patch.yml',
 ];
