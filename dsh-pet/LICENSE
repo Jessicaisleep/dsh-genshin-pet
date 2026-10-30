@@ -1,6 +1,7 @@
 MIT License
 
-Copyright (c) 2026 PC2005-cloud
+Copyright (c) 2026 PC2005-cloud  (upstream dsh-pet)
+Copyright (c) 2026 Jessicaisleep (modifications and this distribution)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +20,58 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+────────────────────────────────────────────────────────────────────────────
+素材排除声明 / ASSET EXCLUSION NOTICE
+────────────────────────────────────────────────────────────────────────────
+
+上面这份 MIT 授权**仅覆盖源代码、配置模板与文档**。
+
+THE MIT GRANT ABOVE COVERS THE SOURCE CODE, CONFIGURATION TEMPLATES AND
+DOCUMENTATION ONLY.
+
+以下内容**不在**本 MIT 授权范围内，版权仍归各自权利人，本包不授予任何
+使用、复制、修改或再分发它们的许可：
+
+The following are expressly EXCLUDED from the MIT grant above. Copyright in
+them remains with their respective owners, and no license to use, copy,
+modify or redistribute them is granted by this package:
+
+1. **角色形象与角色素材** —— 任何角色立绘、贴图、动画、语音、名称或形象，
+   包括但不限于本包中 `assets/` 下的图片、动图、视频与字体文件
+   （`assets/pet/` 两只角色的全部 .webm 动画即属此类）。
+   这些素材的权利属于原游戏 / 角色权利人（本派生包的两只角色来自
+   米哈游 / HoYoverse 的《原神》，按非商业同人使用），与本包作者无关。
+   若你重新分发本包，**必须自行移除这些素材**，或自行取得授权。
+
+   Character artwork and character-derived assets — including but not limited
+   to images, animated images, videos and font files under `assets/` (all the
+   .webm animations of the two characters under `assets/pet/` fall in this
+   category). Rights belong to the original game / character rights holders
+   (the two characters in this derivative come from HoYoverse's Genshin
+   Impact and are used as non-commercial fan work) and are unrelated to this
+   package's authors. Redistributing this package requires removing these
+   assets or obtaining a license.
+
+2. **第三方字体** —— `assets/fonts/` 下的字体文件按字体自身的许可
+   协议使用，不适用 MIT。
+
+   Bundled third-party fonts under `assets/fonts/` are governed by their own
+   font licenses, not by MIT.
+
+3. **凭据与用户数据** —— 本包**不包含**任何 API 密钥、访问令牌、会话
+   数据或对话记忆。仓库根 `.gitignore` 已显式排除 `.credentials.yaml`、
+   `.env`、`standalone-ai.json`、`memory.json`、`logs.txt` 等文件。
+   任何人在本地配置的密钥都由其自行保管，不属于本包内容。
+
+   Credentials and user data — this package contains NO API keys, access
+   tokens, session data or conversation memory. The repository's `.gitignore`
+   explicitly excludes `.credentials.yaml`, `.env`, `standalone-ai.json`,
+   `memory.json` and `logs.txt`. Any credentials configured locally are the
+   sole responsibility of whoever configured them.
+
+如需使用本包的**代码部分**做二次开发，请遵守上面的 MIT 条款；如需使用
+**角色素材**，请另行联系相应权利人。
+
+To build on the CODE, follow the MIT terms above. To use the CHARACTER
+ASSETS, contact the respective rights holders separately.
