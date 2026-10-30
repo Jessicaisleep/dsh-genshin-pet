@@ -1418,6 +1418,7 @@ export function apply(ctx: any): void {
     if (!isGroup || !sender || !sender.id) return;
     try {
       const group = entry as unknown as Parameters<typeof touchMember>[0];
+      // 旧版本残留在群级条目上的 facts 由 `touchMember` 自己清（那里是成员桶的唯一写入口）
       touchMember(group, sender.id, sender.name, text, now);
       const { scope, recentN } = groupPolicyOf(conf);
       const evicted = planMemberEviction(group, scope, recentN);
@@ -1662,7 +1663,14 @@ export function apply(ctx: any): void {
       // 事实卡（L0，2026-10-29）：常驻、永不压缩。放在摘要**之前**——
       // 摘要是「往事叙述」（有损），事实卡是「确定的事」（按键覆盖），重要度更高，位置也更靠前。
       // 缺键（旧数据）→ `factsSection([])` 返回空串，拼出来的 system 与改造前逐字一致。
-      const facts = Array.isArray(target.facts) ? target.facts : [];
+      //
+      // 群聊（2026-10-30 修）：这里**必须空**。旧实现读的是 `target.facts`，而群聊下 `target`
+      // 是群级条目，它那份 facts 是**跨人混合**的——`mergeFacts` 按 `kind|key` 覆盖，
+      // 张三说「住杭州」、李四说「住北京」，群里就只剩北京一条。再以「关于对方的事实」的
+      // 抬头塞进 prompt，就和下面 `groupSection` 里每人一份的 `members[id].facts` 打架：
+      // 同一个「住在哪」，段 1 说北京、段 2 说杭州，模型只能瞎猜。
+      // 每人的事实卡由 `groupSection` 负责，这里一律不给。
+      const facts = !isGroup && Array.isArray(target.facts) ? target.facts : [];
       const baseSystem = petSystemPrompt(found) + factsSection(facts) + memorySection(target.summary ?? '');
       // 检索回填（L3，2026-10-29）：只从**既不在摘要、也不在近期窗口**的那段里捞。
       // 那段正是旧框架的「黑洞」（实测真实数据 28 条 / 61% 完全不可见）。
@@ -1850,8 +1858,10 @@ export function apply(ctx: any): void {
         if (said.tags) userMsg2.aiTags = { ...said.tags, at: now2 };
         target.messages.push(userMsg2);
         target.messages.push({ role: 'assistant', content: said.text, ts: now2 });
-        // 事实卡增量更新（在 writeMemory **之前**，让本轮抽到的事实与本轮消息一次落盘）
-        learnFacts(target, text, now2);
+        // 事实卡增量更新（在 writeMemory **之前**，让本轮抽到的事实与本轮消息一次落盘）。
+        // 群聊下**跳过**：target 是群级条目，写进去就是跨人混的一份（见 baseSystem 处注释）；
+        // 每人的事实卡由下面 recordGroupSpeaker → touchMember 写进 members[id].facts。
+        if (!isGroup) learnFacts(target, text, now2);
         // 群聊成员桶（同位置：与消息一次落盘）
         recordGroupSpeaker(target, found.conf, isGroup, sender, text, now2);
         // 主人群内发言镜像进单人流（2026-10-30 任务1）
@@ -1899,8 +1909,9 @@ export function apply(ctx: any): void {
       target.messages.push(userMsg);
       // 记忆只存正文（配图属展示层，不进上下文——否则下次请求会把标记当历史读回去）
       target.messages.push({ role: 'assistant', content: generated.text, ts: now });
-      // 事实卡增量更新（同助手分支：在 writeMemory 之前，一次落盘）
-      learnFacts(target, text, now);
+      // 事实卡增量更新（同助手分支：在 writeMemory 之前，一次落盘）。
+      // 群聊下跳过，理由同上——每人的事实卡走 members[id].facts。
+      if (!isGroup) learnFacts(target, text, now);
       // 群聊成员桶（同助手分支：与消息一次落盘）
       recordGroupSpeaker(target, found.conf, isGroup, sender, text, now);
       // 主人群内发言镜像进单人流（2026-10-30 任务1）

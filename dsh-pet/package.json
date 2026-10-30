@@ -1,6 +1,6 @@
 {
   "name": "dsh-genshin-pet",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "两只原神同人桌宠：哥伦比娅与纳西妲。她们会赖在 DeepSeek Harness 的桌面上发呆、打瞌睡、被你拎起来晃，也会跟着你敲代码的节奏碎碎念；闲下来乐意陪你聊两句，还记得你上次说过的话。",
   "icon": "assets/logo.png",
   "keywords": [

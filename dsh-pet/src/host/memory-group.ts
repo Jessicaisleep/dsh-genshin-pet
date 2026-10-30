@@ -144,6 +144,17 @@ export function touchMember(
   now: number,
 ): { changed: boolean; factsAdded: number } {
   if (!senderId) return { changed: false, factsAdded: 0 };
+  // 旧版本（2026-10-30 之前）在**群级条目**上写过一份跨人混合的 facts：
+  // `learnFacts(target, …)` 的 target 是群级条目，而 `mergeFacts` 按 `kind|key` 覆盖，
+  // 张三「住杭州」会被李四「住北京」顶掉。那份东西不但错，还会以「关于对方的事实」
+  // 的抬头进 prompt，和这里每人一份的卡直接打架。
+  //
+  // 现在不再读它，就在这里顺手删掉——放在 `touchMember` 而不是调用方，是因为
+  // 这是**唯一**的成员桶写入口（`recordGroupSpeaker` 之外没有别处会写），
+  // 清理逻辑跟着写入口走才不会漏。它也不会被重新写回来：群聊下 `learnFacts` 已跳过。
+  if (Object.prototype.hasOwnProperty.call(group, 'facts')) {
+    delete (group as unknown as Record<string, unknown>).facts;
+  }
   const members = membersOf(group);
   const prev = members[senderId];
   const existingFacts = prev && Array.isArray(prev.facts) ? prev.facts : [];

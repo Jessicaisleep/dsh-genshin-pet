@@ -50,6 +50,15 @@ export interface RetrievalDoc {
    * 之所以从 `messages` 一路透传到这里：检索时不该再回头查原始消息数组。
    */
   aiTags?: { topics: string[]; mood: Mood; kind: Kind };
+  /**
+   * 这句话是**谁**说的（群聊才有；单人模式没有这个字段）。
+   *
+   * 为什么必须带上（2026-10-30 修）：回填渲染写死了「主人说：」，而群聊里
+   * 张三说的话也会走同一条回填路——模型看到「主人说：我住在杭州」，就把张三的事
+   * 当成主人的事实记住，下一轮对李四说「你住杭州」。这比翻不到旧账严重得多。
+   * 缺这个字段时按「主人」渲染（单人模式的既有行为逐字不变）。
+   */
+  senderName?: string;
 }
 
 /** 命中结果 */
@@ -292,6 +301,17 @@ export function search(index: RetrievalIndex, query: string, k: number, minScore
  *   - 明确「不要说根据记录」——陪伴场景里这句话的伤害等同于「我查一下档案」；
  *   - 带上「可能只是部分相关」的提示，避免模型把弱命中当成确定事实到处引用。
  */
+/**
+ * 这句话是谁说的：群聊里用真名，单人模式一律「主人」。
+ *
+ * 单人模式必须仍然是「主人」而不是「用户」——这是既有渲染口径，
+ * 提示词下半段（「别把"你说"的内容安到用户头上」）就是按这个标签写的。
+ */
+function speakerOf(doc: RetrievalDoc): string {
+  const who = typeof doc.senderName === 'string' ? doc.senderName.trim() : '';
+  return who !== '' ? who : '主人';
+}
+
 export function recallSection(hits: RetrievalHit[], opts: { now?: Date } = {}): string {
   const list = Array.isArray(hits) ? hits.filter((h) => h && h.doc) : [];
   if (list.length === 0) return '';
@@ -310,7 +330,9 @@ export function recallSection(hits: RetrievalHit[], opts: { now?: Date } = {}): 
     const when = typeof h.doc.ts === 'number' ? stampLabel(h.doc.ts, now) : '';
     const parts: string[] = [];
     if (when !== '') parts.push('时间：' + when);
-    parts.push('主人说：' + ask);
+    // 群聊里必须用真名（2026-10-30 修）：写死「主人说」会让模型把张三的话
+    // 当成主人的事实记下来，下一轮对李四说「你住杭州」——这比翻不到旧账严重得多。
+    parts.push(speakerOf(h.doc) + '说：' + ask);
     if (reply !== '') parts.push('你说：' + reply);
     return '- ' + parts.join(' ｜ ');
   });
@@ -421,7 +443,8 @@ export function traceSection(
   };
 
   const rows = list.map((d) => {
-    const parts = [clockOf(Number(d.ts)), '主人说：' + cut(d.ask)];
+    // 同 recallSection：群聊用真名（这里也是回填进 prompt 的往事，口径必须一致）
+    const parts = [clockOf(Number(d.ts)), speakerOf(d) + '说：' + cut(d.ask)];
     if (d.reply.trim() !== '') parts.push('你说：' + cut(d.reply));
     return '- ' + parts.join(' ｜ ');
   });
@@ -448,7 +471,13 @@ export function traceSection(
  * `start`/`end` 是给调用方排除近期窗口用的**左闭右开**下标区间。
  */
 export function docsOf(
-  messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string; ts?: number }>,
+  messages: ReadonlyArray<{
+    role: 'user' | 'assistant';
+    content: string;
+    ts?: number;
+    /** 群聊专用：谁说的（`ChatMemoryMessage.senderName`）。单人消息没有这个键。 */
+    senderName?: string;
+  }>,
   range: { start?: number; end?: number } = {},
 ): RetrievalDoc[] {
   const list = Array.isArray(messages) ? messages : [];
@@ -467,12 +496,14 @@ export function docsOf(
     if (ask.trim() === '' && reply.trim() === '') continue;
     const ts = typeof u.ts === 'number' && Number.isFinite(u.ts) && u.ts > 0 ? u.ts : undefined;
     const ai = aiTagsOf(u);
+    const who = typeof u.senderName === 'string' && u.senderName.trim() !== '' ? u.senderName.trim() : undefined;
     out.push({
       index: i,
       ask,
       reply,
       ...(ts !== undefined ? { ts } : {}),
       ...(ai !== undefined ? { aiTags: ai } : {}),
+      ...(who !== undefined ? { senderName: who } : {}),
     });
   }
   return out;
