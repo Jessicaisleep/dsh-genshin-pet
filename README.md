@@ -350,6 +350,8 @@ AI 提示词 → 绿幕视频 → 透明动画 → 插件，换角色、换动�
 
 - **代码**：MIT。`LICENSE` 里同时保留了上游 `PC2005-cloud/dsh-pet` 的版权行与派生部分署名，两者都要遵守。
 - **角色形象与动画素材**（`dsh-pet/assets/pet/` 下的全部 `.webm` 与本仓库的预览 GIF）：**不在 MIT 授权范围内**。角色形象（哥伦比娅 / 纳西妲）及其原始素材的权利属于原权利人（米哈游 / HoYoverse），本仓库只是把它们做成桌宠动画的**非商业同人作品**。重新分发、改造或任何形式的商业化之前，请自行确认你获得了相应授权。
+- **图标**：`dsh-pet/assets/logo.png`（窗口 / 托盘 / 市场卡片图标）、`dsh-pet/assets/pic/notify-*.png`（六种系统通知图标）与仓库根的 `assets/icon-180.png`（插件市场条目图标）都是**从上面这批同人动画里抽帧二次合成的**，因此同样不在 MIT 范围内，随角色素材的约定走。`assets/pic/cursor-*.png` 是通用的白色手势光标（32×32），随代码按 MIT 授权。
+- **音效**：`dsh-pet/assets/sound/click-duck.wav` 是上游带来的中性点击音（0.35 秒合成音，不含任何角色声音），随代码按 MIT 授权。
 - **字体**：`dsh-pet/assets/fonts/` 下的第三方字体按各自许可证分发，不适用 MIT。
 - **上游二创约定**：上游 dsh-pet 要求基于它的衍生作品在公开渠道附上原作者仓库地址，因此本 README 与 `LICENSE` 都保留 <https://github.com/PC2005-cloud/dsh-pet>。
 - **不含密钥**：本仓库不含任何 API key（`.credentials.yaml` / `.env` / `standalone-ai.json` / `memory.json` / `logs.txt` 均被 `.gitignore` 排除）。
