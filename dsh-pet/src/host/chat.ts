@@ -138,7 +138,8 @@ export async function generateChat(
 }
 
 /** 摘要生成结果：与对话同构的失败形状（调用方据此决定是否保留旧摘要） */
-export type SummaryGenerateResult = { ok: true; text: string } | { ok: false; reason: 'provider-missing' | 'generate-error'; message?: string };
+export type SummaryGenerateResult =
+  { ok: true; text: string } | { ok: false; reason: 'provider-missing' | 'generate-error'; message?: string };
 
 /**
  * 生成一段记忆摘要（长期记忆压缩用）。

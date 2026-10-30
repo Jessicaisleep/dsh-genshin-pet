@@ -631,10 +631,7 @@ describe('position.pinned —— 位置固定（三兄弟必须整组成立）',
   });
 
   test('固定但坐标非数字 → 整包拒绝', () => {
-    assert.equal(
-      saveOnce({ pets: [{ ...PETS[0], position: { ...POS, pinned: true, pinX: 'a', pinY: 0.5 } }] }),
-      null,
-    );
+    assert.equal(saveOnce({ pets: [{ ...PETS[0], position: { ...POS, pinned: true, pinX: 'a', pinY: 0.5 } }] }), null);
   });
 
   test('pinned 传非布尔 → 整包拒绝', () => {
@@ -1071,6 +1068,51 @@ describe('syncUserConfigFromDefault —— 同步（内置默认原文写入用�
       rmSync(paths.defaultFile, { force: true });
       assert.throws(() => syncUserConfigFromDefault(paths));
       assert.equal(existsSync(paths.userFile), false, '失败时不得写出用户层文件');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * 派生版（2026-10-30）新增：内置默认的 pets 是空数组（宠物由包内 assets/pet/* 提供），
+   * 「同步」不能因此把用户自己的 pets 清空——那会让桌面上的宠物当场消失。
+   */
+  test('内置 pets 为空 + 用户层有 pets → 同步保留用户那份（其余字段仍取内置默认）', () => {
+    const raw = '// 顶部注释\n{\n  "trayEnabled": false,\n  "pets": []\n}\n';
+    const { paths, dir } = fixture(raw);
+    try {
+      mkdirSync(dirname(paths.userFile), { recursive: true });
+      writeFileSync(paths.userFile, JSON.stringify({ pets: [{ id: 'mine', size: 300, display: 'web' }], old: 1 }));
+      syncUserConfigFromDefault(paths);
+      const after = readFileSync(paths.userFile, 'utf8');
+      assert.match(after, /顶部注释/, '注释必须保留（同步的意义一半在可读性）');
+      assert.match(after, /"mine"/, '用户的宠物必须留在用户层里');
+      assert.doesNotMatch(after, /"pets"\s*:\s*\[\s*\]/, '空数组应已被用户那份替换');
+      const pets = readUserConfig(paths)?.pets as Array<{ id: string }>;
+      assert.deepEqual(
+        pets.map((p) => p.id),
+        ['mine'],
+      );
+      // 白名单外旧字段照旧被清掉（同步 = 以内置默认为准）
+      assert.equal(readUserConfig(paths)?.old, undefined);
+      assert.equal(readUserConfig(paths)?.trayEnabled, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('内置 pets 非空 → 同步以内置为准，不掺用户旧值', () => {
+    const raw = JSON.stringify({ pets: [{ id: 'builtin', size: 300, display: 'web' }] });
+    const { paths, dir } = fixture(raw);
+    try {
+      mkdirSync(dirname(paths.userFile), { recursive: true });
+      writeFileSync(paths.userFile, JSON.stringify({ pets: [{ id: 'mine', size: 300, display: 'web' }] }));
+      syncUserConfigFromDefault(paths);
+      const pets = readUserConfig(paths)?.pets as Array<{ id: string }>;
+      assert.deepEqual(
+        pets.map((p) => p.id),
+        ['builtin'],
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

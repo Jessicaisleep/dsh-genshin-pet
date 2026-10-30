@@ -80,9 +80,7 @@ export function searchByTime(
   const to = Number(range?.to);
   if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return [];
   const k = Math.max(1, Math.floor(Number(limit) || 5));
-  const hit = list.filter(
-    (d) => d && typeof d.ts === 'number' && Number.isFinite(d.ts) && d.ts >= from && d.ts < to,
-  );
+  const hit = list.filter((d) => d && typeof d.ts === 'number' && Number.isFinite(d.ts) && d.ts >= from && d.ts < to);
   // 先按新→旧排序**只为了截断**：同一时间窗里"最近那次"最可能是用户指的那次，
   // 窗口很长（「去年」= 一整年）时不能把最近的挤掉。
   hit.sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
@@ -361,9 +359,7 @@ export function dayTrace(
     return { lines: [], total: 0, truncated: false };
   }
   const max = Math.max(1, Math.floor(Number(opts.max ?? 40)) || 40);
-  const hit = list.filter(
-    (d) => d && typeof d.ts === 'number' && Number.isFinite(d.ts) && d.ts >= from && d.ts < to,
-  );
+  const hit = list.filter((d) => d && typeof d.ts === 'number' && Number.isFinite(d.ts) && d.ts >= from && d.ts < to);
   const total = hit.length;
   if (total === 0) return { lines: [], total: 0, truncated: false };
   if (total <= max) {
@@ -492,9 +488,7 @@ function aiTagsOf(msg: { aiTags?: unknown }): RetrievalDoc['aiTags'] | undefined
   for (const t of o.topics) if (typeof t === 'string' && t.trim() !== '') topics.push(t.trim());
   const mood = o.mood === 'pos' || o.mood === 'neg' || o.mood === 'neutral' ? o.mood : 'neutral';
   const kind =
-    o.kind === 'question' || o.kind === 'plan' || o.kind === 'emotion' || o.kind === 'statement'
-      ? o.kind
-      : 'statement';
+    o.kind === 'question' || o.kind === 'plan' || o.kind === 'emotion' || o.kind === 'statement' ? o.kind : 'statement';
   return { topics, mood, kind };
 }
 

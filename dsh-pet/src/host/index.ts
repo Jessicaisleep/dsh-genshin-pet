@@ -140,7 +140,16 @@ import {
   type GroupScope,
   type Sender,
 } from './memory-group';
-import { buildIndex, dayTrace, docsOf, recallSection, search, searchByTags, traceSection, wantedTags } from './memory-retrieval';
+import {
+  buildIndex,
+  dayTrace,
+  docsOf,
+  recallSection,
+  search,
+  searchByTags,
+  traceSection,
+  wantedTags,
+} from './memory-retrieval';
 import { looksLikeRecall, parseTimeRange } from './memory-time';
 import {
   decideBroadcast,
@@ -239,6 +248,15 @@ const PACKAGE_ROOT_ASSETS = join(PACKAGE_ROOT, 'assets');
 
 /** 包内表情包目录（表情包池的最后一环：assets/memes/<名称>.png） */
 const PACKAGE_MEMES_DIR = join(PACKAGE_ROOT_ASSETS, 'memes');
+
+/**
+ * 包内自带宠物目录（`assets/pet/`）：随包分发的 pet pack，装好即有宠物。
+ *
+ * 与 `$DSH_HOME/dsh-pet/pet/`（用户层）是两个目录，同名前缀用户层优先——见 ./config 的 scanPetFiles。
+ * 素材（`<前缀>-animation/`、`<前缀>-memes/`）**也**在这里找：包内 pet 的动画不复制到用户家，
+ * 否则升级一次就多一份几十 MB 的副本，且用户改不回包内新版本。
+ */
+const PACKAGE_PET_DIR = join(PACKAGE_ROOT_ASSETS, 'pet');
 
 /** 路由前缀 */
 const ROUTE_PREFIX = '/dsh-pet-7340';
@@ -430,10 +448,44 @@ export function apply(ctx: any): void {
     userFile: userConfigPath,
     legacyUserFile: legacyUserConfigPath,
     petDir: petConfigDir,
+    // 包内 pet pack：装好插件就有宠物，不必先往用户家目录拷文件
+    packPetDir: PACKAGE_PET_DIR,
   };
   // 老用户一次性迁移：main-config.json → main-config.jsonc（重命名，内容一字不动；
   // 新文件已存在则不动旧文件）。失败不影响运行——读取侧对旧路径有回落。
   migrateUserConfig(configPaths, (msg) => log.info('[dsh-pet] ' + msg));
+
+  /**
+   * 「改这只宠物的配置要写到哪个文件」——三处写回（display / pinned / persona）共用。
+   *
+   * main → 用户主配置 `main-config.jsonc`（本来就是用户层）；
+   * 文件宠物 → **它自己的**配置文件。包内自带的那几只想改时走 **copy-on-write**：写到用户层
+   * `pet/<前缀>-config.json`，包内那份一字不动。
+   *
+   * 为什么不能直接写包内那份：插件装在 `app.asar` 里是**只读**的，写进去要么 EACCES 要么下次
+   * 升级被整份覆盖掉——用户改的人设/显示位置会静默消失。而 scanPetFiles 里**同名前缀用户层优先**，
+   * 于是「改过一次」之后就以用户层那份为准，素材仍从包内取（升级照样拿到新动画）。
+   */
+  const writeTargetFor = (
+    entry: string,
+  ):
+    | { ok: true; layerPath: string; layerDir: string; existing: Record<string, unknown> | undefined }
+    | { ok: false } => {
+    if (entry === 'main') {
+      return { ok: true, layerPath: userConfigPath, layerDir: userRoot, existing: readUserConfig(configPaths) };
+    }
+    const file = readPetConfigEntry(configPaths, entry);
+    if (!file) return { ok: false };
+    if (!file.fromPack) {
+      return { ok: true, layerPath: file.path, layerDir: petConfigDir, existing: file.raw };
+    }
+    return {
+      ok: true,
+      layerPath: join(petConfigDir, entry + '-config.json'),
+      layerDir: petConfigDir,
+      existing: file.raw,
+    };
+  };
 
   // ---- 读屏与 AI 助手（2026-10-26 新增）----
   // 读屏：常驻一个 PowerShell UIA 子进程。**懒启动**——`screenContextEnabled` 为 false 时
@@ -598,19 +650,20 @@ export function apply(ctx: any): void {
         >;
       }
     | undefined => {
-    const svc = optionalService('standaloneAi') as
-      | { toolTurn?: (input: unknown) => Promise<unknown> }
-      | undefined;
+    const svc = optionalService('standaloneAi') as { toolTurn?: (input: unknown) => Promise<unknown> } | undefined;
     if (!svc || typeof svc.toolTurn !== 'function') return undefined;
     return {
       toolTurn: (input) =>
-        svc.toolTurn!(input) as ReturnType<
-          NonNullable<ReturnType<typeof assistantLlm>>['toolTurn']
-        > extends never
+        svc.toolTurn!(input) as ReturnType<NonNullable<ReturnType<typeof assistantLlm>>['toolTurn']> extends never
           ? never
           : Promise<
               | { ok: true; kind: 'text'; text: string }
-              | { ok: true; kind: 'tools'; toolCalls: Array<{ id: string; name: string; arguments: string }>; text: string }
+              | {
+                  ok: true;
+                  kind: 'tools';
+                  toolCalls: Array<{ id: string; name: string; arguments: string }>;
+                  text: string;
+                }
               | { ok: false; reason: string; message: string }
             >,
     };
@@ -659,6 +712,23 @@ export function apply(ctx: any): void {
   // 用户表情包目录（碎碎念/对话配图的图片：优先于包内 assets/memes，加图不必改包）
   const memesUserRoot = join(userRoot, 'memes');
   /**
+   * 某个 pet pack 子目录（`<素材根>-animation` / `<素材根>-memes`）实际可查的目录链：
+   *   - 用户层 `$DSH_HOME/dsh-pet/pet/<子目录>`（用户覆盖/自己做的宠物）优先；
+   *   - 其次包内 `assets/pet/<子目录>`（随包分发的原创宠物，装好即有）。
+   * 两个都查、逐文件用户层优先——**这不违反「专属目录独占」那条规则**：独占说的是
+   * 「这只宠物有自己的素材目录时不许回落到全局主素材池」，而不是「包内那份不许用」。
+   * 都不存在 → 空数组（调用方回落到主素材链）。
+   * 参数一律先过 resolveAsset：素材根来自 URL 段，防 `..\..\x` 逃出根目录。
+   */
+  const petPackDirs = (sub: string): string[] => {
+    const out: string[] = [];
+    const u = resolveAsset(petConfigDir, sub);
+    if (u !== undefined && existsSync(u)) out.push(u);
+    const p = resolveAsset(PACKAGE_PET_DIR, sub);
+    if (p !== undefined && existsSync(p) && p !== u) out.push(p);
+    return out;
+  };
+  /**
    * 表情包目录链 —— 与动画素材（/thumb）**同一套素材归属语义**：
    *   - `pet/<素材根>-memes/` 存在（种类自带表情包）：**只查它**，池与路由都不回落——
    *     查不到即 404 / 该条目剔除（与 `pet/<素材根>-animation/` 的独占规则逐字一致）；
@@ -666,12 +736,10 @@ export function apply(ctx: any): void {
    *     与「main-animation/<ext> → 包内 assets/<ext>」的主素材链同构）。
    * 池（readMemePool）与路由（/pic/memes）必须走**同一个函数**：池里能选的名字，
    * 路由必须取得到，否则气泡配图会图裂。
-   * 素材根一律先过 resolveAsset：它来自 URL 段，Windows 上 %5C 解出的反斜杠不会被
-   * rest.split('/') 切开，直接 join 会让 `..\..\x` 逃出用户根读盘（与 /thumb 同一道防线）。
    */
   const memeDirsFor = (assetRoot: string): string[] => {
-    const own = resolveAsset(petConfigDir, assetRoot + '-memes');
-    if (own !== undefined && existsSync(own)) return [own];
+    const own = petPackDirs(assetRoot + '-memes');
+    if (own.length > 0) return own;
     return [memesUserRoot, PACKAGE_MEMES_DIR];
   };
   // 轮询统一状态（S）：前端 1s 轮询的**唯一**数据源（余额 / 工作状态 / 通知 / 宠物说话）。
@@ -1232,7 +1300,9 @@ export function apply(ctx: any): void {
   const aiTagQueue: Array<{
     entry: ChatMemoryEntry;
     /** 补标成功后由调用方负责落盘（它才知道 entryKey / petId） */
-    persist: (tagged: Array<{ content: string; ts: number; aiTags: NonNullable<ChatMemoryMessage['aiTags']> }>) => Promise<void>;
+    persist: (
+      tagged: Array<{ content: string; ts: number; aiTags: NonNullable<ChatMemoryMessage['aiTags']> }>,
+    ) => Promise<void>;
   }> = [];
   let aiTagRunning = false;
 
@@ -1314,7 +1384,9 @@ export function apply(ctx: any): void {
    */
   const scheduleAiTagging = (
     entry: ChatMemoryEntry,
-    persist: (tagged: Array<{ content: string; ts: number; aiTags: NonNullable<ChatMemoryMessage['aiTags']> }>) => Promise<void>,
+    persist: (
+      tagged: Array<{ content: string; ts: number; aiTags: NonNullable<ChatMemoryMessage['aiTags']> }>,
+    ) => Promise<void>,
   ): void => {
     try {
       if (pendingTagTargets(entry).length === 0) return;
@@ -1518,9 +1590,7 @@ export function apply(ctx: any): void {
       configuredModel(conf, 'chatModel'),
     );
     if (!result.ok) {
-      log.warn(
-        '[dsh-pet] 记忆压缩失败 reason=' + result.reason + (result.message ? ' ' + result.message : ''),
-      );
+      log.warn('[dsh-pet] 记忆压缩失败 reason=' + result.reason + (result.message ? ' ' + result.message : ''));
       return { ok: false, reason: result.reason };
     }
     const summary = normalizeSummary(result.text);
@@ -1593,8 +1663,7 @@ export function apply(ctx: any): void {
       // 摘要是「往事叙述」（有损），事实卡是「确定的事」（按键覆盖），重要度更高，位置也更靠前。
       // 缺键（旧数据）→ `factsSection([])` 返回空串，拼出来的 system 与改造前逐字一致。
       const facts = Array.isArray(target.facts) ? target.facts : [];
-      const baseSystem =
-        petSystemPrompt(found) + factsSection(facts) + memorySection(target.summary ?? '');
+      const baseSystem = petSystemPrompt(found) + factsSection(facts) + memorySection(target.summary ?? '');
       // 检索回填（L3，2026-10-29）：只从**既不在摘要、也不在近期窗口**的那段里捞。
       // 那段正是旧框架的「黑洞」（实测真实数据 28 条 / 61% 完全不可见）。
       // k 来自 `memoryRecallK`（0 = 关闭）；关闭时整段不参与，system 与原来逐字一致。
@@ -1714,8 +1783,7 @@ export function apply(ctx: any): void {
         // 屏幕上下文**不再在这里拼第二次**：上面构造 `system` 时已经拼进去了（2026-10-27）。
         // 改造前这里单独再拼一次，是因为普通对话那份没拼；现在两份共用同一个 `system`，
         // 再拼一次会让 prompt 里出现两段「用户此刻的屏幕」，白烧 token 还可能让模型重复描述。
-        const assistantSystem =
-          system + '\n' + assistantSystemHint(petWorkspace, acfg.permission, acfg.network);
+        const assistantSystem = system + '\n' + assistantSystemHint(petWorkspace, acfg.permission, acfg.network);
         const runStart = Date.now();
         const outcome = await runAssistant({
           llm: assistantLlm(),
@@ -1795,9 +1863,7 @@ export function apply(ctx: any): void {
             const fresh = await readMemory();
             const e2 = memoryEntryOf(fresh, found.entry, petId);
             for (const t of tagged) {
-              const msg = e2.messages.find(
-                (m) => m.role === 'user' && m.content === t.content && (m.ts ?? 0) === t.ts,
-              );
+              const msg = e2.messages.find((m) => m.role === 'user' && m.content === t.content && (m.ts ?? 0) === t.ts);
               if (msg) msg.aiTags = t.aiTags;
             }
             await writeMemory(fresh);
@@ -1806,7 +1872,9 @@ export function apply(ctx: any): void {
         try {
           await compressMemory(mem, target, found.conf);
         } catch (e) {
-          log.warn('[dsh-pet] 自动记忆压缩异常（已忽略，不影响本次回复）：' + (e instanceof Error ? e.message : String(e)));
+          log.warn(
+            '[dsh-pet] 自动记忆压缩异常（已忽略，不影响本次回复）：' + (e instanceof Error ? e.message : String(e)),
+          );
         }
         // 用户看到的、记进历史的、写进操作记录的，一律是**剥掉标记的正文**
         // （标记只给记忆库用，露出 `[标:…]` 就是没做完）
@@ -1844,9 +1912,7 @@ export function apply(ctx: any): void {
           const fresh = await readMemory();
           const e2 = memoryEntryOf(fresh, found.entry, petId);
           for (const t of tagged) {
-            const msg = e2.messages.find(
-              (m) => m.role === 'user' && m.content === t.content && (m.ts ?? 0) === t.ts,
-            );
+            const msg = e2.messages.find((m) => m.role === 'user' && m.content === t.content && (m.ts ?? 0) === t.ts);
             if (msg) msg.aiTags = t.aiTags;
           }
           await writeMemory(fresh);
@@ -1859,7 +1925,9 @@ export function apply(ctx: any): void {
       try {
         await compressMemory(mem, target, found.conf);
       } catch (e) {
-        log.warn('[dsh-pet] 自动记忆压缩异常（已忽略，不影响本次回复）：' + (e instanceof Error ? e.message : String(e)));
+        log.warn(
+          '[dsh-pet] 自动记忆压缩异常（已忽略，不影响本次回复）：' + (e instanceof Error ? e.message : String(e)),
+        );
       }
       // 回复写进 S（与碎碎念同一个叶子：前端本来就是同一条展示链路）
       state.writePet(
@@ -2461,23 +2529,11 @@ export function apply(ctx: any): void {
       // 聚合里）。两种都只能按"没有这只桌宠"报——绝不能凭 id 去猜它"应该"属于哪个文件。
       const hit = findPetInstance(merged, petId);
       if (!hit) return fail('unknown-pet', `没有这只桌宠：${petId}`);
-      // 目标层：main → 用户主配置；其余 → 文件宠物自己的配置（.json 或 .jsonc，定位统一走 ./config）
-      let layerPath: string;
-      let layerDir: string;
-      let existing: Record<string, unknown> | undefined;
-      if (hit.entry === 'main') {
-        layerPath = userConfigPath;
-        layerDir = userRoot;
-        existing = readUserConfig(configPaths);
-      } else {
-        const file = readPetConfigEntry(configPaths, hit.entry);
-        if (!file) {
-          return fail('generate-error', `宠物条目配置文件找不到：${hit.entry}`);
-        }
-        layerPath = file.path;
-        layerDir = petConfigDir;
-        existing = file.raw;
-      }
+      // 目标层：main → 用户主配置；其余 → 文件宠物自己的配置（.json 或 .jsonc，定位统一走 ./config；
+      // 包内自带的宠物 copy-on-write 到用户层，见 writeTargetFor）
+      const target = writeTargetFor(hit.entry);
+      if (!target.ok) return fail('generate-error', `宠物条目配置文件找不到：${hit.entry}`);
+      const { layerPath, layerDir, existing } = target;
       // 整段替换语义：saveUserConfig 重建的是整个 pets 数组，必须带上**该层全部**宠物，只把目标
       // 那只的 display 换掉（漏掉别的 = 把它们从配置里删掉）。
       const layerPets = Array.isArray(hit.conf.pets) ? (hit.conf.pets as Record<string, unknown>[]) : [];
@@ -2571,26 +2627,16 @@ export function apply(ctx: any): void {
           );
         }
       }
-      let layerPath: string;
-      let layerDir: string;
-      let existing: Record<string, unknown> | undefined;
-      if (hit.entry === 'main') {
-        layerPath = userConfigPath;
-        layerDir = userRoot;
-        existing = readUserConfig(configPaths);
-      } else {
-        const file = readPetConfigEntry(configPaths, hit.entry);
-        if (!file) return fail('generate-error', `宠物条目配置文件找不到：${hit.entry}`);
-        layerPath = file.path;
-        layerDir = petConfigDir;
-        existing = file.raw;
-      }
+      const target = writeTargetFor(hit.entry);
+      if (!target.ok) return fail('generate-error', `宠物条目配置文件找不到：${hit.entry}`);
+      const { layerPath, layerDir, existing } = target;
       // 整段替换语义：必须带上该层**全部**宠物，只改目标那只的 position（漏掉别的 = 删掉它们）。
       const layerPets = Array.isArray(hit.conf.pets) ? (hit.conf.pets as Record<string, unknown>[]) : [];
       const pets = layerPets.map((p) => {
         if (String(p.id) !== petId) return p;
         const copy = { ...p };
-        const pos = copy.position && typeof copy.position === 'object' ? { ...(copy.position as Record<string, unknown>) } : {};
+        const pos =
+          copy.position && typeof copy.position === 'object' ? { ...(copy.position as Record<string, unknown>) } : {};
         pos.pinned = wantPinned;
         if (wantPinned) {
           pos.pinX = pinX;
@@ -2618,7 +2664,13 @@ export function apply(ctx: any): void {
       return {
         kind: 'json',
         status: 200,
-        obj: { ok: true, id: petId, pinned: wantPinned, pinX: wantPinned ? pinX : null, pinY: wantPinned ? pinY : null },
+        obj: {
+          ok: true,
+          id: petId,
+          pinned: wantPinned,
+          pinX: wantPinned ? pinX : null,
+          pinY: wantPinned ? pinY : null,
+        },
       };
     }
 
@@ -3645,28 +3697,17 @@ export function apply(ctx: any): void {
         // 会被静默拒绝。
         //
         // 唯一保留的边界是**结构性**的：必须是字符串、非空才写、空串表示删除覆盖。
-        // 真正的兜底交给下游——模型上下文超限时由 provider 报错，那才是准确的位置。 
+        // 真正的兜底交给下游——模型上下文超限时由 provider 报错，那才是准确的位置。
         // 与 /pet-display 同一条写盘路径：找到目标层 → 整段替换该层 pets（只改目标那只）
-        let layerPath: string;
-        let layerDir: string;
-        let existing: Record<string, unknown> | undefined;
-        if (who.entry === 'main') {
-          layerPath = userConfigPath;
-          layerDir = userRoot;
-          existing = readUserConfig(configPaths);
-        } else {
-          const file = readPetConfigEntry(configPaths, who.entry);
-          if (!file) {
-            return {
-              kind: 'json',
-              status: 200,
-              obj: { ok: false, reason: 'generate-error', message: `宠物条目配置文件找不到：${who.entry}` },
-            };
-          }
-          layerPath = file.path;
-          layerDir = petConfigDir;
-          existing = file.raw;
+        const target = writeTargetFor(who.entry);
+        if (!target.ok) {
+          return {
+            kind: 'json',
+            status: 200,
+            obj: { ok: false, reason: 'generate-error', message: `宠物条目配置文件找不到：${who.entry}` },
+          };
         }
+        const { layerPath, layerDir, existing } = target;
         const layerPets = Array.isArray(who.conf.pets) ? (who.conf.pets as Record<string, unknown>[]) : [];
         const pets = layerPets.map((p) => {
           if (String(p.id) !== petId) return p;
@@ -3731,7 +3772,11 @@ export function apply(ctx: any): void {
           try {
             payload = (JSON.parse(body ?? 'null') as typeof payload | null) ?? {};
           } catch {
-            return { kind: 'json', status: 400, obj: { ok: false, reason: 'bad-json', message: '请求体不是合法 JSON' } };
+            return {
+              kind: 'json',
+              status: 400,
+              obj: { ok: false, reason: 'bad-json', message: '请求体不是合法 JSON' },
+            };
           }
         }
         const rawIndex = method === 'DELETE' ? url.searchParams.get('index') : payload.index;
@@ -3869,7 +3914,9 @@ export function apply(ctx: any): void {
                 (out.covered ? `（在摘要覆盖区内，摘要${out.summaryRewritten ? '已重写' : '未变'}）` : ''),
             );
           } else {
-            log.warn(`[dsh-pet] 历史消息${method === 'POST' ? '修改' : '删除'}失败 pet=${petId}：${out.message ?? out.reason}`);
+            log.warn(
+              `[dsh-pet] 历史消息${method === 'POST' ? '修改' : '删除'}失败 pet=${petId}：${out.message ?? out.reason}`,
+            );
           }
           return { kind: 'json', status: 200, obj: out, headers: { 'cache-control': 'no-cache, no-store' } };
         } catch (e) {
@@ -3889,9 +3936,7 @@ export function apply(ctx: any): void {
         const mem = await readMemory();
         const rawEntry = mem[who.entry]?.[petId];
         const rawMessages = rawEntry?.messages;
-        const all = Array.isArray(rawMessages)
-          ? rawMessages.filter((m) => m && typeof m.content === 'string')
-          : [];
+        const all = Array.isArray(rawMessages) ? rawMessages.filter((m) => m && typeof m.content === 'string') : [];
         const offsetRaw = Number(url.searchParams.get('offset') ?? '0');
         const limitRaw = Number(url.searchParams.get('limit') ?? '200');
         const offset = Number.isInteger(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
@@ -3955,9 +4000,7 @@ export function apply(ctx: any): void {
           obj: {
             ok: true,
             screenContextEnabled: mainNow.screenContextEnabled === true,
-            screenExcludePatterns: Array.isArray(mainNow.screenExcludePatterns)
-              ? mainNow.screenExcludePatterns
-              : [],
+            screenExcludePatterns: Array.isArray(mainNow.screenExcludePatterns) ? mainNow.screenExcludePatterns : [],
             assistantEnabled: mainNow.assistantEnabled === true,
             assistantPermission: isAssistantPermission(mainNow.assistantPermission)
               ? mainNow.assistantPermission
@@ -4114,7 +4157,11 @@ export function apply(ctx: any): void {
       const id = String(parsed?.id ?? '');
       const item = pendingApprovals.get(id);
       if (!item) {
-        return { kind: 'json', status: 200, obj: { ok: false, reason: 'unknown-approval', message: '这条审批不存在或已处理' } };
+        return {
+          kind: 'json',
+          status: 200,
+          obj: { ok: false, reason: 'unknown-approval', message: '这条审批不存在或已处理' },
+        };
       }
       pendingApprovals.delete(id);
       if (parsed?.allow !== true) {
@@ -4135,7 +4182,12 @@ export function apply(ctx: any): void {
         return {
           kind: 'json',
           status: 200,
-          obj: { ok: false, allowed: true, reason: 'generate-error', message: e instanceof Error ? e.message : String(e) },
+          obj: {
+            ok: false,
+            allowed: true,
+            reason: 'generate-error',
+            message: e instanceof Error ? e.message : String(e),
+          },
         };
       }
     }
@@ -4313,13 +4365,18 @@ export function apply(ctx: any): void {
     //     主素材链——用户 main-animation/<ext 子目录> 优先，其次包内 assets/<ext 子目录>
     // extraAnimDir 必须先过 resolveAsset：petId 是解码后的 URL 段，Windows 上 %5C 解出的
     // 反斜杠不会被 rest.split('/') 切开，直接 join 会让 `..\..\x` 逃出用户根读盘。
-    const extraAnimDir = resolveAsset(petConfigDir, petId + '-animation');
+    const extraAnimDirs = petPackDirs(petId + '-animation');
     /** 按扩展名查同名素材（专属目录优先；否则用户根 → 包内根） */
     const findAnim = (e: string): string | undefined => {
       const name = fileName.replace(/\.(webm|mov)$/i, '') + e;
-      return extraAnimDir !== undefined && existsSync(extraAnimDir)
-        ? resolveExisting(extraAnimDir, name)
-        : (resolveExisting(userRootFor(e), name) ?? resolveExisting(assetRootFor(e), name));
+      if (extraAnimDirs.length > 0) {
+        for (const dir of extraAnimDirs) {
+          const hit = resolveExisting(dir, name);
+          if (hit) return hit;
+        }
+        return undefined; // 有专属目录就绝不回落到全局主素材池
+      }
+      return resolveExisting(userRootFor(e), name) ?? resolveExisting(assetRootFor(e), name);
     };
     let file = findAnim(ext);
     let servedExt = ext;

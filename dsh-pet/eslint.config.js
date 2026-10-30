@@ -16,6 +16,11 @@ export default tseslint.config(
     files: ['**/*.ts'],
     rules: {
       'no-undef': 'off',
+      // 下划线前缀 = 有意不用的参数/变量（接口签名要求占位时用，如 Tool.run 的 args）
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
   {

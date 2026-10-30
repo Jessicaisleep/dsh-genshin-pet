@@ -877,7 +877,7 @@ export const settingsScript = `
       syncMemoryVisibility();
       const pets2 = data.pets || [];
       workspaceList.textContent = pets2.length
-        ? pets2.map(p => (p.name || p.id) + ' → ' + p.workspace).join('　|　')
+        ? pets2.map(p => (p.name || p.id) + ' → ' + p.workspace).join(' | ')
         : '（还没有宠物）';
       // 读屏不可用（缺 uia-reader.ps1）时禁用并说明
       if (data.screenAvailable === false) {

@@ -666,9 +666,11 @@ export function makePetUI(rt: {
             // 只有 play() 兑现才代表"确实开始出画"（loadeddata 只代表可解码）
             if (cuePlaybackId !== null) reportPlayback(cuePlaybackId, 'playing');
             if (!dropOld) return;
-            const rvfc = (el as HTMLVideoElement & {
-              requestVideoFrameCallback?: (cb: () => void) => number;
-            }).requestVideoFrameCallback;
+            const rvfc = (
+              el as HTMLVideoElement & {
+                requestVideoFrameCallback?: (cb: () => void) => number;
+              }
+            ).requestVideoFrameCallback;
             if (typeof rvfc === 'function') {
               rvfc.call(el, () => dropOld());
               window.setTimeout(dropOld, 250);
@@ -1345,11 +1347,7 @@ export function makePetUI(rt: {
      *  preferredName 传入时固定使用该动画（右键菜单点播移动动画），否则与随机链一致随机从 moves.actions 选。 */
     const tryMove = (preferredName?: string): boolean | string => {
       // 位置固定：走不动（返回 false = 调用方退化为原地播放），与桌面端 sprite.js 同一条
-      if (
-        cfg.position.pinned === true &&
-        Number.isFinite(cfg.position.pinX) &&
-        Number.isFinite(cfg.position.pinY)
-      ) {
+      if (cfg.position.pinned === true && Number.isFinite(cfg.position.pinX) && Number.isFinite(cfg.position.pinY)) {
         return false;
       }
       if (moveRef.current !== null || pendingMoveRef.current || throwRef.current !== null) return true;
@@ -1886,11 +1884,7 @@ export function makePetUI(rt: {
       // 按下积分判定，这里只是不再建立 dragRef（没有 pointermove 跟手、没有松手抛掷）。
       // 放在这里而不是函数开头：解冻与积分是"用户接管"语义，与位置无关，钉住的宠物也该能点。
       // 判据与渲染同源（都读 cfg.position）——两边不一致会出现"看着能拖但拖不动"。
-      if (
-        cfg.position.pinned === true &&
-        Number.isFinite(cfg.position.pinX) &&
-        Number.isFinite(cfg.position.pinY)
-      ) {
+      if (cfg.position.pinned === true && Number.isFinite(cfg.position.pinX) && Number.isFinite(cfg.position.pinY)) {
         return;
       }
       // 空中抓取：停掉抛掷/漫游/弹簧跟随，从当前落点开始新拖拽
@@ -2308,9 +2302,7 @@ export function makePetUI(rt: {
         // 固定位置（固定在此位置 / 解除固定）：与桌面端注入**同一份**子菜单。
         // 当前状态只决定文案的「已固定」后缀，取值永远来自菜单项本身。
         pinnedMenuBranch(
-          cfg.position.pinned === true &&
-            Number.isFinite(cfg.position.pinX) &&
-            Number.isFinite(cfg.position.pinY),
+          cfg.position.pinned === true && Number.isFinite(cfg.position.pinX) && Number.isFinite(cfg.position.pinY),
         ),
         // 显示位置（仅网页/仅桌面/两者/都不）：与桌面端注入**同一份**子菜单。
         // 改成不含 web 的值（仅桌面/都不）后，本宠物会随即从 visiblePets 里消失——字面意义上的"自己走掉"。
@@ -2345,9 +2337,7 @@ export function makePetUI(rt: {
     // 与桌面端 sprite.js 的 position() 同一条判定顺序（isPinned 先于 customPos），两端才一致。
     // 配置写坏的兜底与桌面端相同：pinned 为真但没有有效坐标 → 按未固定（绝不钉到左上角）。
     const pinnedAt =
-      cfg.position.pinned === true &&
-      Number.isFinite(cfg.position.pinX) &&
-      Number.isFinite(cfg.position.pinY)
+      cfg.position.pinned === true && Number.isFinite(cfg.position.pinX) && Number.isFinite(cfg.position.pinY)
         ? { x: cfg.position.pinX as number, y: cfg.position.pinY as number }
         : null;
     const rootStyle = pinnedAt
@@ -2558,8 +2548,11 @@ export function makePetUI(rt: {
         clickSoundEnabled = main.clickSoundEnabled === true;
         const flattened = flattenConfigPets(merged);
         petBridge.current = flattened;
-        // 「添加宠物」模板 = main 条目 pets[0]（内置默认或用户覆盖后的主宠物）
-        petBridge.template = Array.isArray(main.pets) ? ((main.pets as Pet[])[0] ?? undefined) : undefined;
+        // 「添加宠物」模板 = main 条目 pets[0]；main 没有自己的宠物时（本包常态：两只角色都由
+        // assets/pet/ 的 pet pack 定义）回落到**整个列表的第一只**——否则「+ 添加宠物」按钮
+        // 点了没反应（addPet 里 `if (!tpl) return`），用户会以为功能坏了。
+        petBridge.template =
+          (Array.isArray(main.pets) ? ((main.pets as Pet[])[0] ?? undefined) : undefined) ?? flattened[0];
         setPets(flattened);
       };
       /** 拉成品聚合：host readAllConfig 的输出（字段填满、绝对正确），客户端零校验零兜底 */

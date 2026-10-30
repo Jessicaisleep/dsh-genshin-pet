@@ -14,7 +14,7 @@
  *   1.5 构建桌面共享核心（npm run build:desktop-core：src/shared → window.PetShared）
  *   1.6 生成类型声明（npm run types：tsc → lib/types/*.d.ts）
  *   2. 改写 package.json：files 收敛为发布清单（含桌面模式运行时 runtime/electron-helper、
- *      表情包 assets/memes）—— 幂等：跑一次即定格为当前状态，再跑结果不变，无需备份/恢复
+ *      自带的两个角色素材包 assets/pet）—— 幂等：跑一次即定格为当前状态，再跑结果不变，无需备份/恢复
  *
  * 用法：node scripts/prepare.js（npm run build；npm publish / npm pack 经 prepack 自动执行）
  * 发布：npm publish --tag latest
@@ -68,16 +68,17 @@ const keep = [
   'src',
   '!src/app',
   '!src/standalone',
-  'assets/webm',
   'runtime/electron-helper',
   'assets/fonts',
   'assets/pic',
-  // 表情包（碎碎念/对话配图的图片）：host 只从**包内** assets/memes 读图、与配置 memes 键配对，
-  // 漏掉它 → 包内一张图都没有、配图功能整体失效。注意本函数每次发布（npm install/publish）都会
-  // 用这个数组**覆盖** package.json 的 files，所以"只在 package.json 里加一行"是无效的，必须加在这里
-  'assets/memes',
+  // 【2026-10-30 派生版】自带的两个角色素材包（columbina / nahida 各 22 个 webm + 一份
+  // <前缀>-config.json）。host 侧的 scanPetFiles / petPackDirs 会把「包内 assets/pet」与
+  // 「用户层 $DSH_HOME/dsh-pet/pet」合并读取（同名前缀用户层优先），所以这里必须整目录带上，
+  // 否则 npm 包里一只宠物都没有、装上去是空桌面。
+  'assets/pet',
   // 点击音效（assets/sound/click-duck.wav）：host 的 /sound 路由只从**包内**这一份读，
-  // 漏掉它 → npm 包里没有音频，点击静音。与 memes 同理，必须加在这个数组里而不是 package.json
+  // 漏掉它 → npm 包里没有音频，点击静音。注意本函数每次发布（npm install/publish）都会
+  // 用这个数组**覆盖** package.json 的 files，所以"只在 package.json 里加一行"是无效的，必须加在这里
   'assets/sound',
   'assets/config.jsonc',
   // 插件图标（DSH 插件管理页显示）：package.json 顶层 icon 字段指向这张图。

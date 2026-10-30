@@ -304,12 +304,7 @@ export interface MemoryOverview {
  *
  * 越界一律夹到 `[0, total]`：`index` 来自 HTTP 参数，可能被手改成任意值。
  */
-export function summarizedAfterChange(
-  summarized: number,
-  total: number,
-  index: number,
-  op: 'edit' | 'delete',
-): number {
+export function summarizedAfterChange(summarized: number, total: number, index: number, op: 'edit' | 'delete'): number {
   const n = Math.max(0, Math.floor(Number(summarized) || 0));
   const len = Math.max(0, Math.floor(Number(total) || 0));
   const at = Math.floor(Number(index));

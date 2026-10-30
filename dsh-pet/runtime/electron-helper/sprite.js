@@ -720,7 +720,7 @@ class PetSprite {
             if (this.playback === playbackId) this.playback = null;
             this.reportPlayback(playbackId, 'failed', 'play-rejected');
           });
-        }
+      }
       // 前台的翻转已在函数开头做过（见那里的注释）——这里绝不能再翻一次，
       // 否则 front 会来回抵消，旧层判定与新层判定同时错位。
       this.pending = null;
