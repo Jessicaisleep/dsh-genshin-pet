@@ -2785,6 +2785,150 @@ paths:
                   - $ref: "#/components/schemas/FailureResponse"
         "405":
           $ref: "#/components/responses/MethodNotAllowed"
+
+  /dsh-pet-7340/screen:
+    post:
+      tags: [Action]
+      operationId: pushScreen
+      summary: 手机读屏——把手机屏幕上的文字交给宿主当环境上下文
+      description: |
+        安卓 App（`PetReaderService` 无障碍服务）每 20 秒把当前前台界面的文字推上来，宿主只保留
+        **最近一次**快照，带 90 秒 TTL，**只在内存里**（重启即失效，不落盘、不上传）。
+
+        与"电脑读屏"的关系：`screenSection()` 先看手机快照，新鲜就直接用；过期或从没推过才回落到
+        本机 UIA 读屏。取舍理由——用户手上正在看的那块屏幕，比电脑上开着的窗口更接近"此刻"。
+
+        为什么是 POST 而不是 GET：它**写**状态（内存里的最近快照）。GET 会被浏览器预取/缓存白白
+        调用，也会让 `publicRead` 的免令牌规则把它放出去。
+
+        **校验**（不通过一律 HTTP 200 + `ok: false`，与 `POST /chat` 口径一致）：
+
+        - `text` 超过 8 KB → `bad-request`。上限在宿主这里收，**不靠手机自觉**；
+        - `text` 缺失或 `trim()` 后为空 → 不算错误，按"这次没读到"处理：`accepted: false`，
+          并**清掉旧快照**（留着一个空壳会让宿主以为屏幕是空的）；
+        - `pkg` 可选，只作日志与提示里的"她在用什么"，不参与判定。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pkg:
+                  type: string
+                  description: 前台应用包名，例如 `com.tencent.mm`。
+                text:
+                  type: string
+                  description: 无障碍树里抓到的文字（换行或 ` | ` 分隔）。上限 8 KB。
+      responses:
+        "200":
+          description: |
+            **收下** → `{ ok: true, accepted: true, chars }`；
+            **空文本** → `{ ok: true, accepted: false, chars: 0 }`（清掉旧快照）；
+            **`text` 过长 / 请求体不是合法 JSON** → `{ ok: false, reason: "bad-request", message }`。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  accepted:
+                    type: boolean
+                    description: 这次推上来的内容有没有被采纳（空文本即 `false`）。
+                  chars:
+                    type: integer
+                    description: 采纳后的字数（截断到 1200 之后）。
+                  reason:
+                    type: string
+                  message:
+                    type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /dsh-pet-7340/screen/status:
+    get:
+      tags: [State]
+      operationId: screenStatus
+      summary: 手机读屏状态——有没有最近快照、多旧、哪个包
+      description: |
+        诊断用只读端点。回答的是"读屏到底有没有在工作"：`present` 表示**收到过**，`ageMs` 表示
+        多久以前（超过 90 秒 `fresh()` 就不再采用，但这里仍如实报 `present: true` ——
+        "收到过但旧了"与"从没收到"是两件事，混起来就没法定位）。
+      responses:
+        "200":
+          description: 返回 ok / present / chars / ageMs / pkg 五个字段（present 为 false 时其余为 0 或空）。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  present:
+                    type: boolean
+                  chars:
+                    type: integer
+                  ageMs:
+                    type: number
+                    description: 距上次上传的毫秒数。
+                  pkg:
+                    type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
+
+  /dsh-pet-7340/proactive:
+    post:
+      tags: [Action]
+      operationId: proactive
+      summary: 主动聊天——让这只宠物主动说一句（手动触发，绕过开关与间隔）
+      description: |
+        与 `POST /whisper` 的分工：`/whisper` **不写记忆**（只是碎碎念），这里**会写记忆**
+        （一条 `origin: proactive` 的 assistant），所以用户接下来接话时她知道自己在说什么。
+
+        手动触发**绕过开关与间隔**（设置页的"现在试一句"用它），但仍守住两条语义 —— 这两条不是
+        节流，是正确性，绕过去会得到"用户问了她，她却聊别的"：
+
+        - `unanswered`：上一条就是她主动说的、用户还没回 → 不连发；
+        - `ai-unavailable`：AI 没配置好 → 不硬造内容。
+
+        周期性开口由宿主内的调度器负责（按 `proactiveChatSec`，默认 1800 秒），走路由同一个
+        `publishProactive`，因此两条路径的判定与副作用完全一致。
+      parameters:
+        - $ref: "#/components/parameters/PetIdQuery"
+        - $ref: "#/components/parameters/SurfaceQuery"
+        - name: group
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 群号。给了就走群记忆；不给就挑该宠物最近活跃的那个群，没有群记忆则退化为单人流。
+      responses:
+        "200":
+          description: |
+            **说了** → `{ ok: true, text, group? }`；
+            **没说** → `{ ok: false, reason }`，`reason` 原样透出（`disabled` / `locked` /
+            `not-due` / `unanswered` / `not-at-boundary` / `ai-unavailable` / `generate-error`），
+            调用方据此能分清"她正欠你一句"与"生成炸了"；
+            **`pet` 缺失或不存在** → `{ ok: false, reason: "bad-request" | "unknown-pet", message }`。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  text:
+                    type: string
+                    description: 她这次说的话（ok 为 true 时才有）。
+                  group:
+                    type: string
+                  reason:
+                    type: string
+                  message:
+                    type: string
+        "405":
+          $ref: "#/components/responses/MethodNotAllowed"
 components:
   parameters:
     PetIdQuery:

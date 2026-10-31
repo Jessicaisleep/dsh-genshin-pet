@@ -213,8 +213,11 @@ const walk = (dir) => {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) {
-      // 跳过不会进 npm 包的目录
-      if (!['node_modules', '.git', 'scripts', 'step01', 'step02', 'step03', 'preview'].includes(entry.name)) walk(p);
+      // 跳过不会进 npm 包的目录。dist-app 是 electron-builder 的独立端产物（几百 MB），
+      // 既不在 package.json 的 files 白名单里，也不该算进「包体积」——否则打完独立端
+      // 再来 pack 插件就会误报 package too large。
+      const skip = ['node_modules', '.git', 'scripts', 'step01', 'step02', 'step03', 'preview', 'dist-app'];
+      if (!skip.includes(entry.name)) walk(p);
     } else if (!entry.name.endsWith('.map')) {
       // 打包产物 tarball（npm pack 遗留）不计入自查口径
       if (!entry.name.endsWith('.tgz')) total += statSync(p).size; // sourcemap 不计

@@ -126,6 +126,17 @@ const GLOBAL_DEFAULT_KEYS = [
   'whisperModel',
   'chatModel',
   'eventsRefreshSec',
+  // 主动聊天（2026-10-31 新增）：宠物**不等你说话**，按自己的节奏找你聊。
+  //
+  // 与碎碎念的分水岭（两者共用同一条气泡展示链路，但语义完全不同）：
+  //   · 碎碎念 = 自言自语，**不进记忆**——所以下次对话时它不知道自己刚才嘀咕过什么；
+  //   · 主动聊天 = 真的开启一轮对话，**写进记忆**——你回一句「哈哈」时它接得上。
+  //
+  // 为什么是用户级全局（不放 pets[]）：这是「我想不想被它打扰」的偏好，
+  // 与「这只宠物长什么样」无关；多开一只宠物不该让用户再回答一次同样的问题。
+  // 频率同理——一份节奏，全部宠物共享（否则两只各设一个周期，等于两倍的打扰）。
+  'proactiveChatEnabled',
+  'proactiveChatSec',
   // 读屏与助手（2026-10-26 新增）：都是「用户级偏好」，一份生效、多只宠物共享。
   // 放这里有明确的理由——「要不要让桌宠读我的屏幕」「要不要让它能改文件」是用户的隐私与
   // 安全决定，不该因为多开一只宠物就被各自问一遍，也不该出现「这只读那只不读」的分裂状态。
@@ -561,6 +572,21 @@ function topFieldValid(key: string, value: unknown): boolean {
     case 'assistantNetworkEnabled':
       // 助手能否联网（web_search / fetch_url）。与助手开关独立：可以允许写文件但禁网。
       return typeof value === 'boolean';
+    // ---- 主动聊天（2026-10-31 新增）----
+    case 'proactiveChatEnabled':
+      // 默认关闭。理由同读屏/助手：主动开口会消耗 token 并**写进记忆**，
+      // 任何「默认开启」都等于替用户决定花钱和污染记忆。
+      return typeof value === 'boolean';
+    case 'proactiveChatSec': {
+      // 间隔秒数。下限 120 是硬约束，不是随手取的：
+      //   · 主动聊天每拍都会真的调一次模型并**往 memory.json 追加两条消息**，
+      //     比碎碎念（不写记忆）重得多；给个 30 秒的下限会把记忆文件刷成噪声。
+      //   · 上限 86400（一天）——再长就不叫「主动」了，用户想要的话关掉这个功能更诚实。
+      // 非有限数/越界一律拒（不静默夹紧）：用户手改配置写成 5 秒却「看起来存进去了」，
+      // 比直接报错更难排查。
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 120 && n <= 86400;
+    }
     case 'animations':
       return animationsValid(value);
     case 'animationWeights':
@@ -1072,6 +1098,11 @@ export function saveUserConfig(
   if (ap !== undefined && !topFieldValid('assistantPermission', ap)) return null;
   const ane = o.assistantNetworkEnabled;
   if (ane !== undefined && !topFieldValid('assistantNetworkEnabled', ane)) return null;
+  // 主动聊天（2026-10-31）：与上面几个同语义——传了就校验后进白名单，没传则走透传保留。
+  const pce = o.proactiveChatEnabled;
+  if (pce !== undefined && !topFieldValid('proactiveChatEnabled', pce)) return null;
+  const pcs = o.proactiveChatSec;
+  if (pcs !== undefined && !topFieldValid('proactiveChatSec', pcs)) return null;
   const cleanModel = (v: Record<string, unknown>): { provider: string; model: string } => ({
     provider: String(v.provider).trim(),
     model: String(v.model).trim(),
@@ -1123,6 +1154,9 @@ export function saveUserConfig(
   if (ae !== undefined) outConfig.assistantEnabled = ae;
   if (ap !== undefined) outConfig.assistantPermission = ap;
   if (ane !== undefined) outConfig.assistantNetworkEnabled = ane;
+  // 主动聊天：开关原样存布尔，间隔归一化成数字（请求体传 "600" 也存成 600）
+  if (pce !== undefined) outConfig.proactiveChatEnabled = pce;
+  if (pcs !== undefined) outConfig.proactiveChatSec = Number(pcs);
   // 透传保留：请求体未携带的顶层字段，从 existing（磁盘现有用户文件）原样带回——
   // 设置页只提交 pets(+全局开关+physics+模型+对话历史条数)，手改的 whisperPrompt/memes/... 借此保住。
   // 白名单字段只在「请求体传了」时才算白名单（已由上方写入）；未传时走这里透传磁盘旧值——
@@ -1155,6 +1189,8 @@ export function saveUserConfig(
   if (ae !== undefined) bodyOwned.add('assistantEnabled');
   if (ap !== undefined) bodyOwned.add('assistantPermission');
   if (ane !== undefined) bodyOwned.add('assistantNetworkEnabled');
+  if (pce !== undefined) bodyOwned.add('proactiveChatEnabled');
+  if (pcs !== undefined) bodyOwned.add('proactiveChatSec');
   if (existing && typeof existing === 'object') {
     for (const key of Object.keys(existing)) {
       if (bodyOwned.has(key)) continue; // 白名单字段由请求体决定
