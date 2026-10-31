@@ -8,7 +8,9 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default tseslint.config(
-  { ignores: ['lib/**', 'scripts/**', 'assets/**', 'runtime/**', 'node_modules/**'] },
+  // `_*.mjs`：一次性验收脚本（Playwright / fetch 探针），不是产品代码，跑完就丢；
+  // 它们大量使用浏览器与 Node 全局，按产品规则 lint 只会刷一堆假错。
+  { ignores: ['lib/**', 'scripts/**', 'assets/**', 'runtime/**', 'node_modules/**', '_*.mjs'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
