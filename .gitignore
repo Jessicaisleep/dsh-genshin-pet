@@ -42,6 +42,13 @@ dsh-pet/runtime/electron-helper/shared-core.js
 # ── dsh-pet 桌宠应用打包产物（electron-builder 输出，`node scripts/dist.mjs` 可重生）──
 dsh-pet/dist-app/
 
+# ── 蓝毛（main）角色素材包：本地生成物，不入库 ──
+#   dsh-pet/assets/webm/ 共 106 个 webm / 51.8 MB，由 video/*.mp4 + scripts/*.py
+#   处理链产出（也可从已发布的独立端 resources/app.asar 里按 assets/webm 前缀解出）。
+#   只有独立端打包要它（electron-builder.yml 的 files 含 assets/webm/**）；
+#   插件发布物从不带它（scripts/prepare.js 的 keep 白名单里没有），故不入仓库。
+dsh-pet/assets/webm/
+
 # ── IDE / 编辑器 ──
 .idea/
 .vscode/
